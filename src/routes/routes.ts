@@ -5,7 +5,7 @@ import { otpRateLimiter, authRateLimiter } from '../middlewares/rateLimiter';
 import { uploadAvatar as multerAvatar, uploadHostPhotos as multerHostPhotos } from '../middlewares/uploads';
 
 // Controllers
-import { sendOTP, verifyOTP, fastLogin, guestLogin, logout } from '../controllers/authController';
+import { sendOTP, verifyOTP, fastLogin, guestLogin, logout, devLogin } from '../controllers/authController';
 import { getMe, updateMe, uploadAvatar, updateFcmToken, getMyStats, verifyAge } from '../controllers/userController';
 import { getPrivacyPolicy, getTermsOfService } from '../controllers/legalController';
 import {
@@ -70,6 +70,7 @@ router.post('/auth/send-otp', otpRateLimiter, sendOTP);                         
 router.post('/auth/verify-otp', authRateLimiter, verifyOTP);                               // 2
 router.post('/auth/fast-login', authRateLimiter, fastLogin);                               // 3
 router.post('/auth/guest-login', authRateLimiter, guestLogin);                             // 3b
+router.post('/auth/dev-login', devLogin);                                                  // 3c (DEV skip-auth)
 router.post('/auth/refresh-token', authRateLimiter, fastLogin);                            // 4 (same as fast-login)
 router.post('/auth/logout', verifyToken, logout);                                          // 5
 router.post('/auth/claim-daily-bonus', verifyToken, claimDailyBonus);                      // 5b

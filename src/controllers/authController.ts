@@ -1,7 +1,24 @@
 import { Request, Response } from 'express';
-import { sendOTPService, verifyOTPService, fastLoginService, guestLoginService } from '../services/authService';
+import { sendOTPService, verifyOTPService, fastLoginService, guestLoginService, devLoginService } from '../services/authService';
 import { User } from '../models/user.model';
+import { ENV } from '../config/env';
 import { errorResponse, successResponse } from '../types';
+
+// DEV ONLY: skip OTP, log straight in as the ready test caller/host.
+export const devLogin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (ENV.NODE_ENV === 'production') {
+      res.status(403).json(errorResponse('FORBIDDEN', 'Dev login disabled'));
+      return;
+    }
+    const userType = req.body?.userType === 'host' ? 'host' : 'caller';
+    const result = await devLoginService(userType);
+    res.json(successResponse({ ...result, token: result.accessToken }));
+  } catch (error) {
+    console.error('devLogin error:', error);
+    res.status(500).json(errorResponse('SERVER_ERROR', 'Internal server error'));
+  }
+};
 
 export const sendOTP = async (req: Request, res: Response): Promise<void> => {
   try {

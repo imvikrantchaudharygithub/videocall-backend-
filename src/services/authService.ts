@@ -212,3 +212,52 @@ export const guestLoginService = async (deviceId?: string): Promise<{
     isNewUser,
   };
 };
+
+// ─── DEV skip-auth: instant login as a ready test account (no OTP) ──────────────
+// Disabled in production (see controller guard). Caller = funded; Host = approved+online.
+export const devLoginService = async (userType: 'caller' | 'host') => {
+  const phone = userType === 'host' ? '9222222222' : '+919111111111';
+  let user = await User.findOne({ phone });
+  if (!user) {
+    const referralCode = uuidv4().substring(0, 8).toUpperCase();
+    user = await User.create({
+      phone,
+      displayName: userType === 'host' ? 'Test Host' : 'Test Caller',
+      userType,
+      referralCode,
+    });
+  }
+  user.userType = userType;
+
+  if (userType === 'host') {
+    await HostProfile.updateOne(
+      { userId: user._id },
+      { $set: { isApproved: true, isOnline: true, isBusy: false, videoRatePerMin: 60, voiceRatePerMin: 45 } },
+      { upsert: true },
+    );
+    await HostEarnings.updateOne({ userId: user._id }, { $setOnInsert: { userId: user._id } }, { upsert: true });
+  } else {
+    await CallerProfile.updateOne({ userId: user._id }, { $setOnInsert: { userId: user._id } }, { upsert: true });
+    await CallerWallet.updateOne({ userId: user._id }, { $set: { balanceCoins: 100000 } }, { upsert: true });
+  }
+
+  const sessionId = uuidv4();
+  user.sessionId = sessionId;
+  user.sessionExpiry = new Date(Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+  user.lastLoginAt = new Date();
+  await user.save();
+  await redis.set(`user:session:${sessionId}`, user._id.toString(), 'EX', SESSION_EXPIRY_DAYS * 24 * 60 * 60).catch(() => {});
+
+  const accessToken = generateAccessToken(user._id.toString(), userType);
+  return {
+    accessToken,
+    sessionId,
+    user: {
+      _id: user._id,
+      displayName: user.displayName,
+      userType,
+      isGuest: false,
+      coinBalance: userType === 'caller' ? 100000 : 0,
+    },
+  };
+};
