@@ -1,0 +1,29 @@
+# Render Blueprint for CompanionCall backend (Express + Socket.io)
+# Deploy: Render Dashboard → New → Blueprint → connect this repo.
+# Render auto-injects PORT; the app reads process.env.PORT. Do NOT set PORT.
+services:
+  - type: web
+    name: companioncall-backend
+    runtime: node
+    plan: free
+    # devDependencies (typescript) are needed to build, so install them explicitly:
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      # TEST MODE: keep "development" so OTP codes print to Render logs (no Twilio needed).
+      - key: NODE_ENV
+        value: development
+      # Set these in the Render dashboard (marked sync:false = not stored in git):
+      - key: SECRET_KEY
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: MONGODB_URI        # MongoDB Atlas SRV string (allowlist 0.0.0.0/0)
+        sync: false
+      - key: REDIS_URL          # Upstash Redis URL (rediss://...)
+        sync: false
+      - key: AGORA_APP_ID
+        sync: false
+      - key: AGORA_APP_CERTIFICATE
+        sync: false

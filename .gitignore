@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build output (Render rebuilds from source)
+dist/
+
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Local-only test artifacts
+*.tmp
