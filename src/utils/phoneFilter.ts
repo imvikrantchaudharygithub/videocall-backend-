@@ -4,6 +4,7 @@ const PHONE_PATTERNS = [
   /(\+91|0)?[6-9]\d{9}/g,                    // Indian mobile numbers
   /(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,  // International format
   /\b\d{10,12}\b/g,                           // Any 10-12 digit sequence
+  /\d(?:[\s.\-]*\d){9,}/g,                     // QC-15: 10+ digits split by spaces/dots/dashes to evade the contiguous patterns
 ];
 
 const SOCIAL_PATTERNS = [

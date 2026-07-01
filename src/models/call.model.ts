@@ -18,6 +18,7 @@ export interface ICall extends Document {
   ratePerMinute: number;
   initiatedAt: Date;
   answeredAt?: Date;
+  lastBilledAt?: Date;
   endedAt?: Date;
   durationSeconds: number;
   totalCostCoins: number;
@@ -54,6 +55,7 @@ const callSchema = new Schema<ICall>(
     ratePerMinute: { type: Number, required: true },
     initiatedAt: { type: Date, default: Date.now },
     answeredAt: { type: Date },
+    lastBilledAt: { type: Date },
     endedAt: { type: Date },
     durationSeconds: { type: Number, default: 0 },
     totalCostCoins: { type: Number, default: 0 },

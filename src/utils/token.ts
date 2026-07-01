@@ -7,7 +7,7 @@ export const generateAccessToken = (userId: string, userType: 'caller' | 'host')
 };
 
 export const generateAdminToken = (adminId: string, role: 'super_admin' | 'support'): string => {
-  return jwt.sign({ adminId, role }, ENV.SECRET_KEY, { expiresIn: JWT_EXPIRY });
+  return jwt.sign({ adminId, role }, ENV.ADMIN_SECRET_KEY, { expiresIn: JWT_EXPIRY });
 };
 
 export const verifyAccessToken = (token: string): { userId: string; userType: 'caller' | 'host' } | null => {

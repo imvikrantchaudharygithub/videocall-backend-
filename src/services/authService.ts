@@ -21,21 +21,19 @@ export const sendOTPService = async (phone: string): Promise<{ success: boolean;
   return { success: true, message: 'OTP sent successfully' };
 };
 
-export const verifyOTPService = async (
-  phone: string,
-  otp: string,
-  userType: 'caller' | 'host' = 'caller'
-): Promise<{
+type LoginResult = {
   accessToken: string;
   sessionId: string;
   user: { _id: mongoose.Types.ObjectId; displayName: string; phone: string; userType: string; coinBalance?: number };
   isNewUser: boolean;
-} | null> => {
-  const storedOtp = await redis.get(`otp:${phone}`);
-  if (!storedOtp || storedOtp !== otp) return null;
+};
 
-  await redis.del(`otp:${phone}`);
-
+// Shared: find-or-create the user for this phone, issue a session + access token,
+// and build the login response. Used by OTP verification AND phone-only quick-login.
+const issueLoginForPhone = async (
+  phone: string,
+  userType: 'caller' | 'host' = 'caller'
+): Promise<LoginResult> => {
   let isNewUser = false;
   let user = await User.findOne({ phone });
 
@@ -118,6 +116,27 @@ export const verifyOTPService = async (
     },
     isNewUser,
   };
+};
+
+export const verifyOTPService = async (
+  phone: string,
+  otp: string,
+  userType: 'caller' | 'host' = 'caller'
+): Promise<LoginResult | null> => {
+  const storedOtp = await redis.get(`otp:${phone}`);
+  if (!storedOtp || storedOtp !== otp) return null;
+  await redis.del(`otp:${phone}`);
+  return issueLoginForPhone(phone, userType);
+};
+
+// Phone-only quick login (caller app): no OTP, find-or-create + issue session.
+// Chosen to avoid SMS costs. To re-enable verification later, point the app back
+// at /auth/send-otp + /auth/verify-otp (both still work) — no backend rewrite needed.
+export const quickLoginService = async (
+  phone: string,
+  userType: 'caller' | 'host' = 'caller'
+): Promise<LoginResult> => {
+  return issueLoginForPhone(phone, userType);
 };
 
 export const fastLoginService = async (sessionId: string): Promise<{

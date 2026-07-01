@@ -59,12 +59,14 @@ export const processPaymentSuccess = async (
   razorpayOrderId: string,
   razorpayPaymentId: string
 ): Promise<boolean> => {
-  const order = await PaymentOrder.findOne({ razorpayOrderId, status: 'created' });
+  // Atomic claim: only one concurrent call (client verify vs webhook) wins the
+  // 'created' -> 'paid' transition, preventing double coin-credit.
+  const order = await PaymentOrder.findOneAndUpdate(
+    { razorpayOrderId, status: 'created' },
+    { $set: { status: 'paid', razorpayPaymentId } },
+    { new: true }
+  );
   if (!order) return false;
-
-  order.status = 'paid';
-  order.razorpayPaymentId = razorpayPaymentId;
-  await order.save();
 
   await addCoins(
     order.userId,

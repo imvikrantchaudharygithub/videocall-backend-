@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { sendOTPService, verifyOTPService, fastLoginService, guestLoginService, devLoginService } from '../services/authService';
+import { sendOTPService, verifyOTPService, fastLoginService, guestLoginService, devLoginService, quickLoginService } from '../services/authService';
 import { User } from '../models/user.model';
 import { ENV } from '../config/env';
 import { errorResponse, successResponse } from '../types';
@@ -7,7 +7,9 @@ import { errorResponse, successResponse } from '../types';
 // DEV ONLY: skip OTP, log straight in as the ready test caller/host.
 export const devLogin = async (req: Request, res: Response): Promise<void> => {
   try {
-    if (ENV.NODE_ENV === 'production') {
+    // Secure by default: only available when ENABLE_DEV_LOGIN=true is explicitly set
+    // (the old NODE_ENV check failed open on hosts that don't set NODE_ENV=production).
+    if (!ENV.ENABLE_DEV_LOGIN) {
       res.status(403).json(errorResponse('FORBIDDEN', 'Dev login disabled'));
       return;
     }
@@ -16,6 +18,26 @@ export const devLogin = async (req: Request, res: Response): Promise<void> => {
     res.json(successResponse({ ...result, token: result.accessToken }));
   } catch (error) {
     console.error('devLogin error:', error);
+    res.status(500).json(errorResponse('SERVER_ERROR', 'Internal server error'));
+  }
+};
+
+// Quick login (caller app): phone number only, no OTP. Find-or-create the account
+// and return tokens. NOTE: no verification — anyone with a number can log into it.
+export const quickLogin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const rawPhone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+    // Keep leading + and digits; basic sanity so we don't create junk accounts.
+    const phone = rawPhone.replace(/[^\d+]/g, '');
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 10 || digits.length > 15) {
+      res.status(400).json(errorResponse('INVALID_PHONE', 'Enter a valid phone number'));
+      return;
+    }
+    const result = await quickLoginService(phone, 'caller');
+    res.json(successResponse({ ...result, token: result.accessToken }));
+  } catch (error) {
+    console.error('quickLogin error:', error);
     res.status(500).json(errorResponse('SERVER_ERROR', 'Internal server error'));
   }
 };

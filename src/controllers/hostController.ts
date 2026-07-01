@@ -152,6 +152,29 @@ export const updateBankDetails = async (req: Request, res: Response): Promise<vo
   }
 };
 
+export const getBankDetails = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const profile = await HostProfile.findOne({ userId: req.userId }).select('bankDetails');
+    res.json(successResponse(profile?.bankDetails ?? {}));
+  } catch (error) {
+    res.status(500).json(errorResponse('SERVER_ERROR', 'Internal server error'));
+  }
+};
+
+export const deleteHostPhoto = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { photoUrl } = req.body;
+    if (!photoUrl) {
+      res.status(400).json(errorResponse('VALIDATION_ERROR', 'photoUrl is required'));
+      return;
+    }
+    await HostProfile.updateOne({ userId: req.userId }, { $pull: { photoUrls: photoUrl } });
+    res.json(successResponse({ message: 'Photo removed' }));
+  } catch (error) {
+    res.status(500).json(errorResponse('SERVER_ERROR', 'Internal server error'));
+  }
+};
+
 export const getFavourites = async (req: Request, res: Response): Promise<void> => {
   try {
     const profile = await CallerProfile.findOne({ userId: req.userId });

@@ -5,6 +5,7 @@ import { VipPlan, IVipPlan } from '../models/vipPlan.model';
 import { VipSubscription } from '../models/vipSubscription.model';
 import { User } from '../models/user.model';
 import { addCoins } from './walletService';
+import { startOfDayIST } from '../utils/time';
 
 /**
  * Get a user's active VIP subscription (if any)
@@ -154,19 +155,27 @@ export const claimVipDailyCoins = async (
     return { success: false, coinsAwarded: 0, message: 'No daily coins in your plan' };
   }
 
-  // Check if already claimed today
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (sub.dailyCoinsClaimed && sub.dailyCoinsClaimed >= today) {
+  // Atomic claim guard (QC-20): flip dailyCoinsClaimed only if it hasn't been set for
+  // today's IST day yet. Two concurrent claims can't both match, so coins credit once.
+  const startOfToday = startOfDayIST(new Date());
+  const claimed = await VipSubscription.findOneAndUpdate(
+    {
+      _id: sub._id,
+      $or: [
+        { dailyCoinsClaimed: { $exists: false } },
+        { dailyCoinsClaimed: null },
+        { dailyCoinsClaimed: { $lt: startOfToday } },
+      ],
+    },
+    { $set: { dailyCoinsClaimed: new Date() } }
+  );
+
+  if (!claimed) {
     return { success: false, coinsAwarded: 0, message: 'Daily coins already claimed today' };
   }
 
-  // Credit coins
+  // Only the winning request reaches here → credit exactly once.
   await addCoins(userId, plan.dailyFreeCoins, 'vip_daily', `VIP daily coins — ${plan.name}`);
-
-  // Update claim timestamp
-  sub.dailyCoinsClaimed = new Date();
-  await sub.save();
 
   return { success: true, coinsAwarded: plan.dailyFreeCoins, message: 'Daily coins claimed!' };
 };

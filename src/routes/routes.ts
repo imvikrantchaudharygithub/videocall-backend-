@@ -1,16 +1,16 @@
 import express from 'express';
 import { verifyToken, requireCaller, requireHost } from '../middlewares/auth';
-import { verifyAdminToken } from '../middlewares/adminAuth';
+import { verifyAdminToken, requireSuperAdmin } from '../middlewares/adminAuth';
 import { otpRateLimiter, authRateLimiter } from '../middlewares/rateLimiter';
 import { uploadAvatar as multerAvatar, uploadHostPhotos as multerHostPhotos } from '../middlewares/uploads';
 
 // Controllers
-import { sendOTP, verifyOTP, fastLogin, guestLogin, logout, devLogin } from '../controllers/authController';
+import { sendOTP, verifyOTP, fastLogin, guestLogin, logout, devLogin, quickLogin } from '../controllers/authController';
 import { getMe, updateMe, uploadAvatar, updateFcmToken, getMyStats, verifyAge } from '../controllers/userController';
 import { getPrivacyPolicy, getTermsOfService } from '../controllers/legalController';
 import {
   listHosts, getHostById, searchHosts, applyAsHost, getApplicationStatus,
-  uploadHostPhotos, updateBankDetails, getFavourites, addFavourite, removeFavourite,
+  uploadHostPhotos, updateBankDetails, getBankDetails, deleteHostPhoto, getFavourites, addFavourite, removeFavourite,
   goOnline, goOffline
 } from '../controllers/hostController';
 import { initiateCallHandler, acceptCall, declineCall, endCall, billingTick, switchCallType, getCallHistory, getActiveCall, getCallById } from '../controllers/callController';
@@ -18,7 +18,7 @@ import { joinQueue, leaveQueue, getQueuePosition } from '../controllers/queueCon
 import { listGifts, sendGift } from '../controllers/giftController';
 import { getBalance, getTransactions, getCoinPacks } from '../controllers/walletController';
 import { createOrder, verifyPaymentHandler, razorpayWebhook } from '../controllers/paymentController';
-import { getEarningsSummary, getEarningsHistory, requestWithdrawal, getWithdrawals, getWithdrawalById } from '../controllers/earningsController';
+import { getEarningsSummary, getEarningsHistory, getDailyEarnings, requestWithdrawal, getWithdrawals, getWithdrawalById } from '../controllers/earningsController';
 import { submitRating, getHostRatings } from '../controllers/ratingController';
 import { submitReport, getMyReports } from '../controllers/reportController';
 import { getNotifications, markRead, markAllRead } from '../controllers/notificationController';
@@ -71,6 +71,7 @@ router.post('/auth/verify-otp', authRateLimiter, verifyOTP);                    
 router.post('/auth/fast-login', authRateLimiter, fastLogin);                               // 3
 router.post('/auth/guest-login', authRateLimiter, guestLogin);                             // 3b
 router.post('/auth/dev-login', devLogin);                                                  // 3c (DEV skip-auth)
+router.post('/auth/quick-login', authRateLimiter, quickLogin);                             // 3d (caller phone-only login, no OTP)
 router.post('/auth/refresh-token', authRateLimiter, fastLogin);                            // 4 (same as fast-login)
 router.post('/auth/logout', verifyToken, logout);                                          // 5
 router.post('/auth/claim-daily-bonus', verifyToken, claimDailyBonus);                      // 5b
@@ -184,6 +185,7 @@ router.get('/leaderboard/my-rank', verifyToken, requireHost, getMyRank);        
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/earnings/summary', verifyToken, requireHost, getEarningsSummary);            // 38
 router.get('/earnings/history', verifyToken, requireHost, getEarningsHistory);            // 39
+router.get('/earnings/daily', verifyToken, requireHost, getDailyEarnings);                // 39b
 router.post('/withdrawals/request', verifyToken, requireHost, requestWithdrawal);         // 40
 router.get('/withdrawals', verifyToken, requireHost, getWithdrawals);                     // 41
 router.get('/withdrawals/:id', verifyToken, requireHost, getWithdrawalById);              // 42
@@ -206,7 +208,9 @@ router.get('/reports/my', verifyToken, getMyReports);                           
 router.post('/host-registration/apply', verifyToken, applyAsHost);                        // 47
 router.get('/host-registration/status', verifyToken, getApplicationStatus);               // 48
 router.post('/host-registration/photos', verifyToken, multerHostPhotos, uploadHostPhotos); // 49
+router.delete('/host-registration/photos', verifyToken, requireHost, deleteHostPhoto);    // 49b
 router.patch('/host-registration/bank-details', verifyToken, requireHost, updateBankDetails); // 50
+router.get('/host-registration/bank-details', verifyToken, requireHost, getBankDetails);   // 50b
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTIFICATIONS  /api/notifications
@@ -227,7 +231,7 @@ router.get('/admin/users/callers', verifyAdminToken, listCallers);              
 router.get('/admin/users/hosts', verifyAdminToken, adminListHosts);                       // 60
 router.get('/admin/users/:id', verifyAdminToken, getUserDetail);                          // 61
 router.patch('/admin/users/:id/ban', verifyAdminToken, banUser);                          // 62
-router.patch('/admin/users/:id/balance', verifyAdminToken, adjustBalance);                // 63
+router.patch('/admin/users/:id/balance', verifyAdminToken, requireSuperAdmin, adjustBalance); // 63 (mints/removes coins → super admin only)
 router.patch('/admin/users/:id/tier', verifyAdminToken, changeHostTier);                  // 64
 
 // Host approval
@@ -246,8 +250,8 @@ router.get('/admin/transactions', verifyAdminToken, getAllTransactions);        
 
 // Payouts
 router.get('/admin/withdrawals/pending', verifyAdminToken, getPendingWithdrawals);        // 73
-router.patch('/admin/withdrawals/:id/approve', verifyAdminToken, approveWithdrawal);      // 74
-router.patch('/admin/withdrawals/:id/reject', verifyAdminToken, rejectWithdrawal);        // 75
+router.patch('/admin/withdrawals/:id/approve', verifyAdminToken, requireSuperAdmin, approveWithdrawal); // 74 (money out → super admin only)
+router.patch('/admin/withdrawals/:id/reject', verifyAdminToken, requireSuperAdmin, rejectWithdrawal);   // 75 (super admin only)
 
 // Content management
 router.get('/admin/gifts', verifyAdminToken, listGiftsAdmin);                             // 76

@@ -175,23 +175,31 @@ export const billingTick = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const coinsPerTick = Math.ceil(call.ratePerSecond * 5);
+    // Server-authoritative, time-based billing: charge the delta between the true
+    // cumulative cost for elapsed time and what's already been billed. Avoids per-tick
+    // rounding overcharge (QC-10) and can't be inflated/deflated by tick frequency.
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - (call.answeredAt?.getTime() ?? Date.now())) / 1000));
+    const targetCost = Math.ceil((elapsedSeconds / 60) * call.ratePerMinute);
+    const delta = targetCost - call.totalCostCoins;
+
     const wallet = await CallerWallet.findOne({ userId: call.callerId });
 
-    if (!wallet || wallet.balanceCoins < coinsPerTick) {
+    if (delta > 0 && (!wallet || wallet.balanceCoins < delta)) {
       await endActiveCall(call, 'insufficient_credits');
       res.json(successResponse({ remainingCoins: wallet?.balanceCoins ?? 0, callEnded: true }));
       return;
     }
 
-    wallet.balanceCoins -= coinsPerTick;
-    wallet.totalSpentCoins += coinsPerTick;
-    await wallet.save();
-
-    call.totalCostCoins += coinsPerTick;
+    if (delta > 0 && wallet) {
+      wallet.balanceCoins -= delta;
+      wallet.totalSpentCoins += delta;
+      await wallet.save();
+      call.totalCostCoins = targetCost;
+    }
+    call.lastBilledAt = new Date();
     await call.save();
 
-    res.json(successResponse({ remainingCoins: wallet.balanceCoins }));
+    res.json(successResponse({ remainingCoins: wallet?.balanceCoins ?? 0 }));
   } catch (error) {
     console.error('billingTick error:', error);
     res.status(500).json(errorResponse('SERVER_ERROR', 'Internal server error'));
@@ -230,11 +238,14 @@ export const endCall = async (req: Request, res: Response): Promise<void> => {
 
 // Settles billing (3-min minimum, minus coins already taken by ticks), credits
 // the host, frees them up, and notifies both parties.
-const endActiveCall = async (
+export const endActiveCall = async (
   call: ICall,
-  endReason: 'caller_ended' | 'host_ended' | 'insufficient_credits'
+  endReason: 'caller_ended' | 'host_ended' | 'insufficient_credits' | 'system_timeout',
+  effectiveEndAt?: Date
 ): Promise<{ callId: string; duration: number; coinsDeducted: number; hostEarnings: number; endReason: string }> => {
-  const endedAt = new Date();
+  // For sweeper-ended (stale) calls, settle as of the last confirmed-active moment so
+  // the caller isn't charged for dead air after their app went away.
+  const endedAt = effectiveEndAt ?? new Date();
   const durationSeconds = Math.floor((endedAt.getTime() - (call.answeredAt?.getTime() ?? endedAt.getTime())) / 1000);
   const billedSeconds = Math.max(durationSeconds, MIN_CALL_BILLING_SECONDS);
   const alreadyBilledCoins = call.totalCostCoins;
@@ -320,8 +331,35 @@ export const switchCallType = async (req: Request, res: Response): Promise<void>
   try {
     const { id } = req.params;
     const { newType } = req.body;
-    await Call.updateOne({ _id: id, status: 'active' }, { $set: { callType: newType } });
-    res.json(successResponse({ callId: id, callType: newType }));
+    if (newType !== 'video' && newType !== 'voice') {
+      res.status(400).json(errorResponse('VALIDATION_ERROR', 'newType must be "video" or "voice"'));
+      return;
+    }
+    const call = await Call.findOne({ _id: id, status: 'active' });
+    if (!call) {
+      res.status(400).json(errorResponse('CALL_NOT_ACTIVE', 'Call is not active'));
+      return;
+    }
+    const requesterId = req.userId!.toString();
+    if (requesterId !== call.callerId.toString() && requesterId !== call.hostId.toString()) {
+      res.status(403).json(errorResponse('FORBIDDEN', 'Not a participant of this call'));
+      return;
+    }
+
+    // Recompute the billing rate for the new type (QC-12: previously only callType
+    // changed, so billing kept the old rate).
+    const hp = await HostProfile.findOne({ userId: call.hostId });
+    const newRate = newType === 'video' ? hp?.videoRatePerMin : hp?.voiceRatePerMin;
+    call.callType = newType;
+    if (newRate && newRate > 0) {
+      // NOTE: billing is cumulative from answeredAt, so a mid-call switch reprices the
+      // whole call at the new rate. The apps don't expose switch-type today; per-segment
+      // pricing would be needed before enabling mid-call switching in the UI.
+      call.ratePerMinute = newRate;
+      call.ratePerSecond = newRate / 60;
+    }
+    await call.save();
+    res.json(successResponse({ callId: id, callType: newType, ratePerMinute: call.ratePerMinute }));
   } catch (error) {
     res.status(500).json(errorResponse('SERVER_ERROR', 'Internal server error'));
   }

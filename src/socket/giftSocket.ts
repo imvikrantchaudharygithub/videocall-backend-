@@ -10,13 +10,22 @@ import mongoose from 'mongoose';
 type AuthSocket = Socket & { userId: mongoose.Types.ObjectId; userType: 'caller' | 'host' };
 
 export const registerGiftHandlers = (io: Server, socket: AuthSocket): void => {
-  socket.on('gift:send', async ({ callId, giftId, hostId }: { callId: string; giftId: string; hostId: string }) => {
+  socket.on('gift:send', async ({ callId, giftId }: { callId: string; giftId: string }) => {
     try {
       const gift = await Gift.findOne({ _id: giftId, isActive: true });
       if (!gift) {
         socket.emit('gift:error', { error: 'Gift not found' });
         return;
       }
+
+      // Validate against the real call: sender must be the caller on an active call,
+      // and the host is derived from the call (never trusted from the client).
+      const call = await Call.findById(callId);
+      if (!call || call.status !== 'active' || call.callerId.toString() !== socket.userId.toString()) {
+        socket.emit('gift:error', { error: 'INVALID_CALL' });
+        return;
+      }
+      const hostId = call.hostId.toString();
 
       const result = await deductCoins(
         socket.userId,

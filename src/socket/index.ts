@@ -5,7 +5,6 @@ import { ENV } from '../config/env';
 import redis from '../config/redis';
 import { REDIS_KEYS } from '../utils/constants';
 import { registerPresenceHandlers } from './presenceSocket';
-import { registerCallHandlers } from './callSocket';
 import { registerChatHandlers } from './chatSocket';
 import { registerGiftHandlers } from './giftSocket';
 import { registerQueueHandlers } from './queueSocket';
@@ -57,7 +56,6 @@ export const initSocket = (server: HttpServer): Server => {
 
     // Register all event handlers
     registerPresenceHandlers(io, socket as AuthenticatedSocket & Required<Pick<AuthenticatedSocket, 'userId' | 'userType'>>);
-    registerCallHandlers(io, socket as AuthenticatedSocket & Required<Pick<AuthenticatedSocket, 'userId' | 'userType'>>);
     registerChatHandlers(io, socket as AuthenticatedSocket & Required<Pick<AuthenticatedSocket, 'userId' | 'userType'>>);
     registerGiftHandlers(io, socket as AuthenticatedSocket & Required<Pick<AuthenticatedSocket, 'userId' | 'userType'>>);
     registerQueueHandlers(io, socket as AuthenticatedSocket & Required<Pick<AuthenticatedSocket, 'userId' | 'userType'>>);

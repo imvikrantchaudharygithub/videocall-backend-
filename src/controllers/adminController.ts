@@ -316,16 +316,17 @@ export const getPendingWithdrawals = async (req: Request, res: Response): Promis
 
 export const approveWithdrawal = async (req: Request, res: Response): Promise<void> => {
   try {
-    const withdrawal = await PayoutRequest.findById(req.params.id);
-    if (!withdrawal) { res.status(404).json(errorResponse('NOT_FOUND', 'Withdrawal not found')); return; }
-    if (withdrawal.status !== 'pending') {
-      res.status(400).json(errorResponse('ALREADY_PROCESSED', 'Withdrawal already processed'));
+    // Atomic claim: only one approve call wins pending -> processing, preventing
+    // a concurrent double-approve from firing two real Razorpay payouts.
+    const withdrawal = await PayoutRequest.findOneAndUpdate(
+      { _id: req.params.id, status: 'pending' },
+      { $set: { status: 'processing' } },
+      { new: true }
+    );
+    if (!withdrawal) {
+      res.status(400).json(errorResponse('ALREADY_PROCESSED', 'Withdrawal not found or already processed'));
       return;
     }
-
-    // Coins already deducted at request time — just update status
-    withdrawal.status = 'processing';
-    await withdrawal.save();
 
     // Trigger Razorpay Payout
     const payoutResult = await createRazorpayPayout(

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { LoginStreak } from '../models/loginStreak.model';
 import { addCoins } from '../services/walletService';
 import { DAILY_STREAK_COINS } from '../utils/constants';
+import { istDayDiff } from '../utils/time';
 import { errorResponse, successResponse } from '../types';
 import mongoose from 'mongoose';
 
@@ -18,12 +19,8 @@ export const claimDailyBonus = async (req: Request, res: Response): Promise<void
     const lastClaimed = streak.lastClaimedAt;
 
     if (lastClaimed) {
-      const lastClaimedDate = new Date(lastClaimed);
-      lastClaimedDate.setHours(0, 0, 0, 0);
-      const todayDate = new Date(now);
-      todayDate.setHours(0, 0, 0, 0);
-
-      const diffDays = Math.floor((todayDate.getTime() - lastClaimedDate.getTime()) / (1000 * 60 * 60 * 24));
+      // Day boundary is IST midnight (India-first), not the server's UTC midnight.
+      const diffDays = istDayDiff(now, new Date(lastClaimed));
 
       if (diffDays === 0) {
         res.status(400).json(errorResponse('ALREADY_CLAIMED', 'Daily bonus already claimed today'));
@@ -77,11 +74,7 @@ export const getDailyBonusStatus = async (req: Request, res: Response): Promise<
     }
 
     const now = new Date();
-    const lastClaimedDate = new Date(streak.lastClaimedAt);
-    lastClaimedDate.setHours(0, 0, 0, 0);
-    const todayDate = new Date(now);
-    todayDate.setHours(0, 0, 0, 0);
-    const diffDays = Math.floor((todayDate.getTime() - lastClaimedDate.getTime()) / (1000 * 60 * 60 * 24));
+    const diffDays = istDayDiff(now, new Date(streak.lastClaimedAt));
 
     const canClaim = diffDays >= 1;
     const activeStreak = diffDays > 1 ? 0 : streak.currentStreak;

@@ -61,7 +61,13 @@ export const conversationService = {
   },
 
   // Get messages for a conversation
-  async getMessages(conversationId: string, userType: 'caller' | 'host', page = 1, limit = 30) {
+  async getMessages(conversationId: string, userId: string, userType: 'caller' | 'host', page = 1, limit = 30) {
+    // Authorization: the requester must be a participant of this conversation.
+    const conversation = await Conversation.findById(conversationId).lean();
+    if (!conversation) throw new Error('NOT_FOUND');
+    const participantId = (userType === 'caller' ? conversation.callerId : conversation.hostId)?.toString();
+    if (participantId !== userId.toString()) throw new Error('FORBIDDEN');
+
     const query: any = { conversationId: new mongoose.Types.ObjectId(conversationId) };
 
     // Hosts don't see AI messages
@@ -123,7 +129,13 @@ export const conversationService = {
   },
 
   // Mark conversation as read
-  async markRead(conversationId: string, userType: 'caller' | 'host') {
+  async markRead(conversationId: string, userId: string, userType: 'caller' | 'host') {
+    // Authorization: only a participant may mark their side read.
+    const conversation = await Conversation.findById(conversationId).lean();
+    if (!conversation) throw new Error('NOT_FOUND');
+    const participantId = (userType === 'caller' ? conversation.callerId : conversation.hostId)?.toString();
+    if (participantId !== userId.toString()) throw new Error('FORBIDDEN');
+
     const update = userType === 'caller'
       ? { callerUnread: 0 }
       : { hostUnread: 0 };

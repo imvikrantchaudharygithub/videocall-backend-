@@ -21,14 +21,16 @@ export const conversationController = {
 
   async getMessages(req: Request, res: Response) {
     try {
+      const userId = (req as any).userId;
       const userType = (req as any).userType;
       const id = routeParam(req.params.id);
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 30;
-      const result = await conversationService.getMessages(id, userType, page, limit);
+      const result = await conversationService.getMessages(id, userId, userType, page, limit);
       res.json({ success: true, data: result });
     } catch (err: any) {
-      res.status(500).json({ success: false, message: err.message });
+      const code = err.message === 'FORBIDDEN' ? 403 : err.message === 'NOT_FOUND' ? 404 : 500;
+      res.status(code).json({ success: false, message: err.message });
     }
   },
 
@@ -46,12 +48,14 @@ export const conversationController = {
 
   async markRead(req: Request, res: Response) {
     try {
+      const userId = (req as any).userId;
       const userType = (req as any).userType;
       const id = routeParam(req.params.id);
-      await conversationService.markRead(id, userType);
+      await conversationService.markRead(id, userId, userType);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ success: false, message: err.message });
+      const code = err.message === 'FORBIDDEN' ? 403 : err.message === 'NOT_FOUND' ? 404 : 500;
+      res.status(code).json({ success: false, message: err.message });
     }
   },
 

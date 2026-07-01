@@ -9,6 +9,7 @@ import redis from './config/redis';
 import router from './routes/routes';
 import { globalRateLimiter } from './middlewares/rateLimiter';
 import { initSocket } from './socket/index';
+import { startCallSweeper } from './jobs/staleCallSweeper';
 import { errorResponse } from './types';
 
 const app = express();
@@ -70,6 +71,9 @@ const start = async () => {
 
     // Initialize Socket.io
     initSocket(server);
+
+    // Server-authoritative billing safety net: auto-settle stale/over-long active calls.
+    startCallSweeper();
 
     server.listen(PORT, () => {
       console.log(`\n🚀 CompanionCall API running on http://localhost:${PORT}`);

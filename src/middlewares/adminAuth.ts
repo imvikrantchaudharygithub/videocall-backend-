@@ -25,7 +25,13 @@ export const verifyAdminToken = (req: AdminRequest, res: Response, next: NextFun
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, ENV.SECRET_KEY) as AdminJwtPayload;
+    const decoded = jwt.verify(token, ENV.ADMIN_SECRET_KEY) as AdminJwtPayload;
+    // Reject anything that isn't a genuine admin token (e.g. a user access token):
+    // it must carry a valid adminId and a known admin role.
+    if (!decoded || !decoded.adminId || (decoded.role !== 'super_admin' && decoded.role !== 'support')) {
+      res.status(401).json(errorResponse('UNAUTHORIZED', 'Invalid admin token'));
+      return;
+    }
     req.adminId = new mongoose.Types.ObjectId(decoded.adminId);
     req.adminRole = decoded.role;
     next();

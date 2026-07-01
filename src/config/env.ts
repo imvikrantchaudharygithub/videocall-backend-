@@ -7,7 +7,11 @@ export const ENV = {
 
   // JWT
   SECRET_KEY: process.env.SECRET_KEY || 'fallback_secret_change_in_prod',
+  ADMIN_SECRET_KEY: process.env.ADMIN_SECRET_KEY || 'admin_fallback_secret_change_in_prod',
   SESSION_SECRET: process.env.SESSION_SECRET || 'session_secret_change_in_prod',
+
+  // Opt-in only: dev/test no-OTP login. Must be explicitly enabled; disabled by default.
+  ENABLE_DEV_LOGIN: process.env.ENABLE_DEV_LOGIN === 'true',
 
   // MongoDB
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/companion_call',

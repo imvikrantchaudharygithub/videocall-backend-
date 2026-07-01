@@ -4,7 +4,10 @@ import { EarningsTransaction } from '../models/earningsTransaction.model';
 import { PayoutRequest } from '../models/payoutRequest.model';
 import { errorResponse, successResponse } from '../types';
 import { MIN_WITHDRAWAL_COINS, COINS_PER_INR } from '../utils/constants';
+import { istDateKey } from '../utils/time';
 import mongoose from 'mongoose';
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export const getEarningsSummary = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -86,6 +89,49 @@ export const getEarningsHistory = async (req: Request, res: Response): Promise<v
   }
 };
 
+// GET /api/earnings/daily?days=30 — per-day earnings for the host's dashboard chart.
+// Buckets earning credits by IST calendar day and zero-fills every day in the window
+// so the chart is continuous (oldest → newest).
+export const getDailyEarnings = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const days = Math.min(Math.max(parseInt((req.query.days as string) || '30', 10), 1), 90);
+    // A touch of slack on the lower bound so no IST day at the edge is clipped by the UTC offset.
+    const since = new Date(Date.now() - days * MS_PER_DAY);
+
+    const rows = await EarningsTransaction.aggregate([
+      {
+        $match: {
+          hostId: new mongoose.Types.ObjectId(req.userId),
+          type: { $in: ['call_earning', 'gift_earning', 'bonus'] },
+          createdAt: { $gte: since },
+        },
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Kolkata' } },
+          coins: { $sum: '$amountCoins' },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const byDate = new Map<string, { coins: number; count: number }>();
+    for (const r of rows) byDate.set(r._id as string, { coins: r.coins, count: r.count });
+
+    const stats: { date: string; coins: number; inr: number }[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const key = istDateKey(new Date(Date.now() - i * MS_PER_DAY));
+      const coins = byDate.get(key)?.coins ?? 0;
+      stats.push({ date: key, coins, inr: coins / COINS_PER_INR });
+    }
+
+    res.json(successResponse({ stats }));
+  } catch (error) {
+    console.error('getDailyEarnings error:', error);
+    res.status(500).json(errorResponse('SERVER_ERROR', 'Internal server error'));
+  }
+};
+
 export const requestWithdrawal = async (req: Request, res: Response): Promise<void> => {
   try {
     const { amountInr, method } = req.body;
@@ -95,21 +141,23 @@ export const requestWithdrawal = async (req: Request, res: Response): Promise<vo
     }
 
     const amountCoins = amountInr * COINS_PER_INR;
-    const earnings = await HostEarnings.findOne({ userId: req.userId });
-
-    if (!earnings || earnings.balanceCoins < amountCoins) {
-      res.status(402).json(errorResponse('INSUFFICIENT_BALANCE', 'Insufficient earnings balance'));
-      return;
-    }
 
     if (amountCoins < MIN_WITHDRAWAL_COINS) {
       res.status(400).json(errorResponse('MIN_WITHDRAWAL', `Minimum withdrawal is ₹${200}`));
       return;
     }
 
-    // Deduct coins immediately to prevent double-spending
-    earnings.balanceCoins -= amountCoins;
-    await earnings.save();
+    // Atomic deduct: succeeds only if balance still covers the amount, so two
+    // concurrent requests can't both pass and over-withdraw.
+    const earnings = await HostEarnings.findOneAndUpdate(
+      { userId: req.userId, balanceCoins: { $gte: amountCoins } },
+      { $inc: { balanceCoins: -amountCoins } },
+      { new: true }
+    );
+    if (!earnings) {
+      res.status(402).json(errorResponse('INSUFFICIENT_BALANCE', 'Insufficient earnings balance'));
+      return;
+    }
 
     await EarningsTransaction.create({
       hostId: req.userId,

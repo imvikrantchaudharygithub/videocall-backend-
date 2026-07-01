@@ -121,7 +121,7 @@ export const registerDmHandlers = (io: Server, socket: AuthSocket) => {
   // Mark as read
   socket.on('dm:read', async (data: { conversationId: string }) => {
     try {
-      await conversationService.markRead(data.conversationId, socket.userType);
+      await conversationService.markRead(data.conversationId, socket.userId.toString(), socket.userType);
       const convo = await Conversation.findById(data.conversationId).lean();
       if (!convo) return;
       const recipientId = socket.userType === 'caller'
